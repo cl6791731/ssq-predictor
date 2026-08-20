@@ -1,0 +1,14 @@
+# 编译产物
+双色球推演器
+*.app
+*.zip
+build/
+DerivedData/
+
+# 系统文件
+.DS_Store
+*.log
+
+# 编辑器
+.vscode/
+.idea/
