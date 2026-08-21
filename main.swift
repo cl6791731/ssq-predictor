@@ -475,14 +475,26 @@ class DataStore: ObservableObject {
     }
 
     func fetchFrom17500(completion: @escaping (Result<[Record], Error>) -> Void) {
-        guard let url = URL(string: "https://e.17500.cn/getData/ssq.TXT") else {
-            completion(.failure(NSError(domain: "URL", code: -1, userInfo: nil)))
+        // 多源容错：HTTPS 优先，失败时降级到 HTTP（e.17500.cn 同时提供两种协议）
+        let urls = [
+            "https://e.17500.cn/getData/ssq.TXT",
+            "http://e.17500.cn/getData/ssq.TXT"
+        ].compactMap { URL(string: $0) }
+        fetchRecords(urls: urls, index: 0, completion: completion)
+    }
+
+    private func fetchRecords(urls: [URL], index: Int, completion: @escaping (Result<[Record], Error>) -> Void) {
+        guard index < urls.count else {
+            completion(.failure(NSError(domain: "AllSourcesFailed", code: -1, userInfo: nil)))
             return
         }
+        let url = urls[index]
+        debugLog("[SSQ] Fetching \(url.absoluteString)")
 
-        URLSession.shared.dataTask(with: url) { data, response, error in
+        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             if let error = error {
-                completion(.failure(error))
+                debugLog("[SSQ] \(url.absoluteString) failed: \(error.localizedDescription)")
+                self?.fetchRecords(urls: urls, index: index + 1, completion: completion)
                 return
             }
 
