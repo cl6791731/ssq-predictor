@@ -319,6 +319,15 @@ class DataStore: ObservableObject {
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: backtestPath))
             predictions = try JSONDecoder().decode([Prediction].self, from: data)
+            // 一次性清理旧数据：预测记录只保留综合推演（最终一注），
+            // 方法明细不再作为预测记录保存（其表现由滚动回测引擎统计）
+            let loaded = predictions
+            predictions = loaded.filter { $0.method == DataStore.comprehensiveMethod }
+            if predictions.count != loaded.count {
+                let removed = loaded.count - predictions.count
+                savePredictions()
+                debugLog("[SSQ] Cleaned \(removed) method-detail predictions, kept \(predictions.count) comprehensive")
+            }
             debugLog("[SSQ] Loaded \(predictions.count) predictions from \(backtestPath)")
         } catch {
             predictions = []
@@ -1146,7 +1155,7 @@ struct BacktestView: View {
                     // Method weights
                     if !dataStore.methodStats.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("⚖️ 方法权重（命中率基于已比对记录）")
+                            Text("⚖️ 方法权重（表现数据来自滚动回测）")
                                 .font(.headline)
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
@@ -1157,13 +1166,23 @@ struct BacktestView: View {
                                                 .foregroundColor(.secondary)
                                                 .lineLimit(1)
                                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                            Text(String(format: "%.0f%%", stat.hitRate * 100))
-                                                .font(.title3)
-                                                .fontWeight(.bold)
-                                                .foregroundColor(stat.hitRate > 0.3 ? .green : (stat.hitRate > 0.1 ? .orange : .red))
-                                            Text("\(stat.totalCount)次")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
+                                            if let bt = dataStore.backtestResults.first(where: { $0.method == stat.method }) {
+                                                Text(String(format: "%.2f红 %.0f%%蓝", bt.avgRedHit, bt.blueHitRate * 100))
+                                                    .font(.callout)
+                                                    .fontWeight(.bold)
+                                                    .foregroundColor(bt.score > 1.6 ? .green : (bt.score > 1.4 ? .orange : .red))
+                                                Text("回测\(bt.periods)期")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                            } else {
+                                                Text("—")
+                                                    .font(.title3)
+                                                    .fontWeight(.bold)
+                                                    .foregroundColor(.secondary)
+                                                Text("未回测")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                            }
                                             Slider(value: Binding(
                                                 get: { stat.weight },
                                                 set: { dataStore.updateMethodWeight(stat.method, weight: $0) }
@@ -1198,10 +1217,10 @@ struct BacktestView: View {
                         .padding(.vertical, 40)
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("预测记录（含方法明细共 \(dataStore.predictions.count) 条，显示最近 60 条）")
+                            Text("预测记录（\(dataStore.predictions.count) 条，每期一注综合推演）")
                                 .font(.headline)
                             LazyVStack(spacing: 8) {
-                                ForEach(dataStore.predictions.sorted(by: { $0.id > $1.id }).prefix(60)) { pred in
+                                ForEach(dataStore.predictions.sorted(by: { $0.id > $1.id })) { pred in
                                     PredictionRow(prediction: pred) {
                                         dataStore.deletePredictionById(pred.id)
                                     }
@@ -1568,24 +1587,12 @@ extension DataStore {
             }
             let result = predictor.predict(records: recordsSnapshot, steps: &steps)
 
-            // 方法级明细一并入库，作为命中率统计的真实数据源
+            // 预测记录只保存最终一注（综合推演）；方法明细仅作为推演过程展示，
+            // 方法级命中表现由滚动回测引擎统计
             let baseId = Int(Date().timeIntervalSince1970 * 1000)
             let timeFormatter = DateFormatter()
             timeFormatter.dateFormat = "HH:mm:ss"
             let timeString = timeFormatter.string(from: Date())
-
-            var newPredictions: [Prediction] = []
-            for (index, methodResult) in result.methodResults.enumerated() {
-                newPredictions.append(Prediction(
-                    id: baseId + index,
-                    issue: nextIssue,
-                    method: methodResult.method,
-                    predictedRed: methodResult.red.sorted(),
-                    predictedBlue: methodResult.blue,
-                    recordTime: timeString,
-                    note: methodResult.detail
-                ))
-            }
 
             let comprehensivePrediction = Prediction(
                 id: baseId + 9999,
@@ -1607,11 +1614,9 @@ extension DataStore {
             DispatchQueue.main.async {
                 self.predictionSteps = steps
                 self.latestPrediction = comprehensivePrediction
-                self.predictions.append(contentsOf: newPredictions)
                 self.predictions.append(comprehensivePrediction)
                 self.savePredictions()
                 self.autoCompareWithLatestDraws()
-                self.calculateMethodStats()
                 self.isPredicting = false
             }
         }
