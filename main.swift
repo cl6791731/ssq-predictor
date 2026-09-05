@@ -872,22 +872,11 @@ class Predictor {
                 for i in 1...33 { redVotes[i]! += 0.05 * weight }
             }
 
-            // 选号：取得分最高的6红1蓝
-            let sortedRed = redVotes.sorted { $0.value > $1.value }
-            let sortedBlue = blueVotes.sorted { $0.value > $1.value }
-
-            var selectedRed = Array(sortedRed.prefix(6).map { $0.key })
-            selectedRed = Array(Set(selectedRed)).sorted()
-            while selectedRed.count < 6 {
-                for r in sortedRed where !selectedRed.contains(r.key) {
-                    selectedRed.append(r.key)
-                    break
-                }
-                if selectedRed.count >= 6 { break }
-            }
-            selectedRed = Array(selectedRed.prefix(6)).sorted()
-
-            let selectedBlue = sortedBlue.first?.key ?? 8
+            // 选号：按加权得分随机抽取（高分号码更可能被选中，但每次结果有差异）
+            // 修复：不再固定取前6名，避免所有号码同分时固定输出 [1,2,3,4,5,6]
+            //       也保证多个方法的推荐能够多样化，投票才有意义
+            let selectedRed = weightedPick(from: redVotes, count: 6).sorted()
+            let selectedBlue = weightedPick(from: blueVotes, count: 1).first ?? 8
 
             steps.append("方法\(index+1)/\(methodNames.count): \(methodName)...")
             for d in detail { steps.append("  → \(d)") }
@@ -899,7 +888,58 @@ class Predictor {
         return results
     }
 
-    /// 加权投票：汇总各方法推荐，返回综合红蓝及得票明细
+    /// 加权随机抽取：按评分作为权重，随机选出 count 个不重复号码。
+    /// 高分号码被选中的概率更大（保留统计规律），但不保证每次都取前几，
+    /// 因此每次推演结果会有差异，各方法之间也更容易产生多样化推荐。
+    private func weightedPick(from votes: [Int: Double], count: Int) -> [Int] {
+        // 过滤出得分为正、且在有效范围内的候选
+        // （红球 1...33，蓝球 1...16 都用这个，由调用方保证数据范围）
+        let candidates = votes.filter { $0.value > 0 }
+        guard !candidates.isEmpty else { return [] }
+
+        var items = Array(candidates)
+        var selected: [Int] = []
+
+        // 兜底：给每个候选最小权重，避免全为 0（极端情况也至少能随机出号）
+        let minWeight = 0.01
+        var iterationsLeft = 60 // 防止极端情况下死循环
+
+        while selected.count < count && items.count > 0 && iterationsLeft > 0 {
+            iterationsLeft -= 1
+            var total: Double = 0
+            for (_, w) in items { total += max(w, minWeight) }
+            guard total > 0 else { break }
+
+            // 累加区间 + 随机命中
+            var cumulative: Double = 0
+            let threshold = Double.random(in: 0..<total)
+            var pickedIndex: Int = items.count - 1
+            for (idx, (_, w)) in items.enumerated() {
+                cumulative += max(w, minWeight)
+                if threshold < cumulative {
+                    pickedIndex = idx
+                    break
+                }
+            }
+
+            let pickNum = items[pickedIndex].key
+            if !selected.contains(pickNum) {
+                selected.append(pickNum)
+            }
+            items.remove(at: pickedIndex)
+        }
+
+        // 极端兜底：如果仍不足 count（理论上不会），补足范围内的剩余号码
+        if selected.count < count {
+            let maxNum = 33
+            for n in 1...maxNum where !selected.contains(n) {
+                selected.append(n)
+                if selected.count >= count { break }
+            }
+        }
+
+        return selected
+    }
     private func vote(_ methodResults: [(method: String, red: [Int], blue: Int, detail: String)]) -> (red: [Int], blue: Int, redVotes: [(key: Int, value: Int)], blueVotes: [(key: Int, value: Int)]) {
         var finalRedVotes: [Int: Int] = [:]
         var finalBlueVotes: [Int: Int] = [:]
