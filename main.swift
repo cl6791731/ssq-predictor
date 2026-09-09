@@ -891,51 +891,63 @@ class Predictor {
     /// 加权随机抽取：按评分作为权重，随机选出 count 个不重复号码。
     /// 高分号码被选中的概率更大（保留统计规律），但不保证每次都取前几，
     /// 因此每次推演结果会有差异，各方法之间也更容易产生多样化推荐。
+    ///
+    /// 兜底保障：即使某些方法留下的有效候选不足 count（例如所有号码同分、
+    /// 或某分区没有加分），也会补足到 count 个，绝不会返回空/不足。
     private func weightedPick(from votes: [Int: Double], count: Int) -> [Int] {
-        // 过滤出得分为正、且在有效范围内的候选
-        // （红球 1...33，蓝球 1...16 都用这个，由调用方保证数据范围）
-        let candidates = votes.filter { $0.value > 0 }
-        guard !candidates.isEmpty else { return [] }
+        // 判断真实号码范围（红球 1...33，蓝球传入时 key 在 1...16）
+        let allKeys = Array(votes.keys)
+        let isBlue = (allKeys.max() ?? 33) <= 16
+        let numRange = isBlue ? (1...16) : (1...33)
 
-        var items = Array(candidates)
+        // 得分为正的候选（权威的"该方法的推荐池"）
+        let positive = votes.filter { $0.value > 0 && numRange.contains($0.key) }
+        var items = Array(positive)
+
         var selected: [Int] = []
-
-        // 兜底：给每个候选最小权重，避免全为 0（极端情况也至少能随机出号）
         let minWeight = 0.01
-        var iterationsLeft = 60 // 防止极端情况下死循环
 
-        while selected.count < count && items.count > 0 && iterationsLeft > 0 {
-            iterationsLeft -= 1
+        // 第一轮：从加权候选里随机抽取（不重复）
+        while selected.count < count && !items.isEmpty {
+            // 计算未选中候选的总权重
             var total: Double = 0
-            for (_, w) in items { total += max(w, minWeight) }
+            var available: [(key: Int, value: Double)] = []
+            for item in items where !selected.contains(item.key) {
+                total += max(item.value, minWeight)
+                available.append(item)
+            }
             guard total > 0 else { break }
+            if available.isEmpty { break }
 
-            // 累加区间 + 随机命中
-            var cumulative: Double = 0
+            // 按权重命中
             let threshold = Double.random(in: 0..<total)
-            var pickedIndex: Int = items.count - 1
-            for (idx, (_, w)) in items.enumerated() {
-                cumulative += max(w, minWeight)
+            var cumulative: Double = 0
+            var pickedNum: Int? = nil
+            for cand in available {
+                cumulative += max(cand.value, minWeight)
                 if threshold < cumulative {
-                    pickedIndex = idx
+                    pickedNum = cand.key
                     break
                 }
             }
 
-            let pickNum = items[pickedIndex].key
-            if !selected.contains(pickNum) {
-                selected.append(pickNum)
+            if let num = pickedNum {
+                selected.append(num)
+                // 从 items 中移除
+                if let idx = items.firstIndex(where: { $0.key == num }) {
+                    items.remove(at: idx)
+                }
+            } else {
+                // 极端情况：找不到，跳出避免死循环
+                break
             }
-            items.remove(at: pickedIndex)
         }
 
-        // 极端兜底：如果仍不足 count（理论上不会），补足范围内的剩余号码
-        if selected.count < count {
-            let maxNum = 33
-            for n in 1...maxNum where !selected.contains(n) {
-                selected.append(n)
-                if selected.count >= count { break }
-            }
+        // 2) 若仍不足 count（候选不足），从全范围内随机补足
+        while selected.count < count {
+            let remain = numRange.filter { !selected.contains($0) }
+            guard let n = remain.randomElement() else { break }
+            selected.append(n)
         }
 
         return selected
