@@ -1119,6 +1119,10 @@ struct PredictionRow: View {
                 }
             }
             HStack(spacing: 4) {
+                Text("推演")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .frame(width: 30, alignment: .leading)
                 ForEach(prediction.predictedRed.sorted(), id: \.self) { num in
                     BallView(number: num, isBlue: false)
                 }
@@ -1128,6 +1132,10 @@ struct PredictionRow: View {
             }
             if prediction.autoCompared, let actualRed = prediction.actualRed, let actualBlue = prediction.actualBlue {
                 HStack(spacing: 4) {
+                    Text("开奖")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .frame(width: 30, alignment: .leading)
                     ForEach(actualRed.sorted(), id: \.self) { num in
                         BallView(number: num, isBlue: false)
                     }
