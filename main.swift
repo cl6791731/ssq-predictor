@@ -952,48 +952,165 @@ class Predictor {
 
         return selected
     }
-    private func vote(_ methodResults: [(method: String, red: [Int], blue: Int, detail: String)]) -> (red: [Int], blue: Int, redVotes: [(key: Int, value: Int)], blueVotes: [(key: Int, value: Int)]) {
-        var finalRedVotes: [Int: Int] = [:]
+
+    // MARK: - 反拥挤过滤层（融合「许愿算法」思路）
+
+    /// P1 形态过滤：检测"极端形态"，这类号码要么历史上极少开出、要么属于大众爱选的形态。
+    /// 命中任一即视为应尽量避免（不是绝对禁止，而是大幅降权）。
+    /// 返回 true 表示该组合属于极端形态。
+    private func isExtremeForm(_ reds: [Int]) -> Bool {
+        let s = reds.sorted()
+        // 3 连号以上（含 4 连、5 连、6 连）
+        var run = 1
+        for i in 1..<s.count {
+            if s[i] == s[i-1] + 1 { run += 1 } else { run = 1 }
+            if run >= 3 { return true }
+        }
+        // 全奇 / 全偶
+        let oddCount = s.filter { $0 % 2 == 1 }.count
+        if oddCount == 6 || oddCount == 0 { return true }
+        // 全大(>=17) / 全小(<=16)
+        let bigCount = s.filter { $0 >= 17 }.count
+        if bigCount == 6 || bigCount == 0 { return true }
+        // 同尾数 >=3（例如 3,13,23 或 8,18,28）
+        var tailCount: [Int: Int] = [:]
+        for n in s { tailCount[n % 10, default: 0] += 1 }
+        if tailCount.values.contains(where: { $0 >= 3 }) { return true }
+        // 全等差（如 5,10,15,20,25,30）
+        if s.count >= 3 {
+            let d = s[1] - s[0]
+            if d > 0 {
+                var isAP = true
+                for i in 2..<s.count where s[i] - s[i-1] != d { isAP = false; break }
+                if isAP { return true }
+            }
+        }
+        // 完全对称（首尾配对和相等，如 5,10,15,20,25,30 对称中心）
+        // 简化：首尾两两之和相等
+        if s.count == 6 {
+            let sum = s[0] + s[5]
+            if s[1] + s[4] == sum && s[2] + s[3] == sum { return true }
+        }
+        return false
+    }
+
+    /// P2 生日号降权：1-31 是生日可选范围，大众极易扎堆。
+    /// 若组合里 1-31 的号码过多（>=5 个），返回一个降权因子 (<1.0)。
+    private func birthdayDownweightFactor(_ reds: [Int]) -> Double {
+        let birthdayNums = reds.filter { $0 >= 1 && $0 <= 31 }.count
+        // 6 个里有 5-6 个落在 1-31 → 明显生日扎堆
+        if birthdayNums >= 6 { return 0.55 }
+        if birthdayNums == 5 { return 0.75 }
+        return 1.0
+    }
+
+    /// P4 自我重复检查：与已买过的历史号码对比，避免重复推荐。
+    /// 返回与历史某注红球的重合个数（>=4 视为高度重复，应避免）。
+    private func maxOverlapWithHistory(_ reds: [Int], previous: [[Int]]) -> Int {
+        let set = Set(reds)
+        var maxOv = 0
+        for hist in previous {
+            let ov = set.intersection(hist).count
+            if ov > maxOv { maxOv = ov }
+        }
+        return maxOv
+    }
+
+    /// 综合过滤：对一组候选红球，依次应用 P1/P2/P4，返回是否"值得保留"。
+    /// - Parameter previousReds: 已买过的历史红球组合
+    private func passesAntiCrowdFilters(_ reds: [Int], previousReds: [[Int]]) -> Bool {
+        // P1 极端形态 → 拒绝
+        if isExtremeForm(reds) { return false }
+        // P4 与历史某注重合 >=4 → 拒绝（避免重复买同样的号）
+        if maxOverlapWithHistory(reds, previous: previousReds) >= 4 { return false }
+        return true
+    }
+
+    private func vote(_ methodResults: [(method: String, red: [Int], blue: Int, detail: String)], previousReds: [[Int]]) -> (red: [Int], blue: Int, redVotes: [(key: Int, value: Int)], blueVotes: [(key: Int, value: Int)]) {
+        var finalRedVotes: [Int: Double] = [:]
         var finalBlueVotes: [Int: Int] = [:]
 
+        // P2 生日号降权：1-31 是大众生日号范围，长期略降权以减少扎堆。
+        // 用 Double 累计以便施加连续降权。
+        let birthdayDownweight = 0.85
         for result in methodResults {
             let weight = weights[result.method] ?? defaultWeight
             for num in result.red {
-                finalRedVotes[num] = (finalRedVotes[num] ?? 0) + Int(weight * 10)
+                var v = Double(weight * 10)
+                if num >= 1 && num <= 31 { v *= birthdayDownweight }
+                finalRedVotes[num] = (finalRedVotes[num] ?? 0) + v
             }
             finalBlueVotes[result.blue] = (finalBlueVotes[result.blue] ?? 0) + Int(weight * 10)
         }
 
         let sortedReds = finalRedVotes.sorted { $0.value > $1.value }
-        var selectedRed = Array(Set(sortedReds.prefix(6).map { $0.key })).sorted()
-        if selectedRed.count < 6 {
-            let remaining = Set(1...33).subtracting(selectedRed)
-            let sorted = finalRedVotes.filter { remaining.contains($0.key) }.sorted { $0.value > $1.value }
-            for i in 0..<min(6 - selectedRed.count, sorted.count) {
-                selectedRed.append(sorted[i].key)
+
+        // 候选池：取前 12 个得票最高的号码，在其中搜索"通过过滤且总票最高"的 6 号组合
+        let candidatePool = Array(sortedReds.prefix(12).map { $0.key })
+        var selectedRed: [Int] = []
+        var bestScore = -1.0
+
+        // 枚举 C(12,6) 共 924 种组合，选总分最高且通过 P1/P4 过滤的组合
+        let n = candidatePool.count
+        if n >= 6 {
+            for i in 0..<(n - 5) {
+                for j in (i + 1)..<(n - 4) {
+                    for k in (j + 1)..<(n - 3) {
+                        for l in (k + 1)..<(n - 2) {
+                            for m in (l + 1)..<(n - 1) {
+                                for p in (m + 1)..<n {
+                                    let combo = [candidatePool[i], candidatePool[j], candidatePool[k], candidatePool[l], candidatePool[m], candidatePool[p]]
+                                    // P1 极端形态 / P4 历史重复 过滤
+                                    guard passesAntiCrowdFilters(combo, previousReds: previousReds) else { continue }
+                                    // P2 组合级生日扎堆再降权
+                                    let factor = birthdayDownweightFactor(combo)
+                                    let score = combo.reduce(0.0) { $0 + (finalRedVotes[$1] ?? 0) } * factor
+                                    if score > bestScore {
+                                        bestScore = score
+                                        selectedRed = combo
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            selectedRed = Array(Set(selectedRed)).sorted()
         }
-        selectedRed = Array(selectedRed.prefix(6))
+
+        // 兜底：若过滤过严导致没选够 6 个，退化为按票数取前6（不再过滤，保证一定有结果）
+        if selectedRed.count < 6 {
+            var fallback = Array(Set(sortedReds.prefix(6).map { $0.key })).sorted()
+            if fallback.count < 6 {
+                let remaining = Set(1...33).subtracting(fallback)
+                let sorted = finalRedVotes.filter { remaining.contains($0.key) }.sorted { $0.value > $1.value }
+                for idx in 0..<min(6 - fallback.count, sorted.count) {
+                    fallback.append(sorted[idx].key)
+                }
+                fallback = Array(Set(fallback)).sorted()
+            }
+            selectedRed = Array(fallback.prefix(6)).sorted()
+        }
 
         let sortedBlues = finalBlueVotes.sorted { $0.value > $1.value }
         let selectedBlue = sortedBlues.first?.key ?? 8
 
         return (
-            selectedRed,
+            selectedRed.sorted(),
             selectedBlue,
-            sortedReds.map { (key: $0.key, value: $0.value) },
+            sortedReds.map { (key: $0.key, value: Int($0.value)) },
             sortedBlues.map { (key: $0.key, value: $0.value) }
         )
     }
 
     /// 综合推演：加权投票汇总各方法推荐，同时返回方法级明细（只计算一次）
-    func predict(records: [Record], steps: inout [String]) -> (red: [Int], blue: Int, methodResults: [(method: String, red: [Int], blue: Int, detail: String)]) {
+    /// - Parameter previousReds: 已买过的历史红球组合，用于 P4 自我重复过滤
+    func predict(records: [Record], previousReds: [[Int]] = [], steps: inout [String]) -> (red: [Int], blue: Int, methodResults: [(method: String, red: [Int], blue: Int, detail: String)]) {
         let methodResults = getMethodPredictions(records: records, steps: &steps)
 
         steps.append("")
         steps.append("📊 综合投票阶段...")
-        let voted = vote(methodResults)
+        steps.append("  → 启用反拥挤过滤：P1形态过滤 · P2生日号降权 · P4历史重复检查")
+        let voted = vote(methodResults, previousReds: previousReds)
         steps.append("  → 汇总\(methodResults.count)种方法推荐（含权重）")
         steps.append("  → 红球得票: \(voted.redVotes.prefix(10).map { "\($0.key)(\($0.value)分)" }.joined(separator: ","))")
         steps.append("  → 蓝球得票: \(voted.blueVotes.prefix(5).map { "\($0.key)(\($0.value)分)" }.joined(separator: ","))")
@@ -1005,7 +1122,8 @@ class Predictor {
     func predictForBacktest(records: [Record]) -> (red: [Int], blue: Int, methodResults: [(method: String, red: [Int], blue: Int, detail: String)]) {
         var discarded: [String] = []
         let methodResults = getMethodPredictions(records: records, steps: &discarded)
-        let voted = vote(methodResults)
+        // 回测不应用 P4 历史重复（每期独立），但仍用 P1/P2 保持口径一致
+        let voted = vote(methodResults, previousReds: [])
         return (voted.red, voted.blue, methodResults)
     }
 }
@@ -1645,7 +1763,9 @@ extension DataStore {
             if !methodStatsSnapshot.isEmpty {
                 steps.append("⚖️ 已加载 \(methodStatsSnapshot.count) 个方法的优化权重")
             }
-            let result = predictor.predict(records: recordsSnapshot, steps: &steps)
+            // P4 自我重复检查：传入已买过的历史红球组合，避免重复推荐
+            let previousReds = self.predictions.map { $0.predictedRed }
+            let result = predictor.predict(records: recordsSnapshot, previousReds: previousReds, steps: &steps)
 
             // 预测记录只保存最终一注（综合推演）；方法明细仅作为推演过程展示，
             // 方法级命中表现由滚动回测引擎统计
