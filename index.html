@@ -11,6 +11,7 @@
 :root{
   --bg:#0b1220; --panel:#111a2e; --panel2:#0e1626; --line:#1f2b45;
   --text:#e8eefc; --dim:#8b98b8; --red:#ff4d5e; --blue:#3aa0ff;
+  --green:#2dd4a7;
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -20,7 +21,7 @@ body{
   min-height:100vh; padding-bottom:24px;
 }
 .wrap{max-width:720px; margin:0 auto; padding:18px 16px calc(18px + env(safe-area-inset-bottom));}
-header{display:flex; align-items:center; gap:12px; padding:8px 4px 18px;}
+header{display:flex; align-items:center; gap:12px; padding:8px 4px 18px}
 header .logo{width:46px;height:46px;border-radius:12px;flex:0 0 46px;
   background:linear-gradient(135deg,#ff4d5e,#3aa0ff);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800}
 header h1{font-size:19px;margin:0;letter-spacing:.5px}
@@ -32,11 +33,12 @@ header .sub{font-size:12px;color:var(--dim);margin-top:3px}
 
 .btnrow{display:flex;gap:10px;flex-wrap:wrap}
 button{appearance:none;border:none;cursor:pointer;font-family:inherit;touch-action:manipulation}
-.btn{flex:1 1 auto;min-width:120px;padding:14px 16px;border-radius:12px;font-size:15px;font-weight:700;
+.btn{flex:1 1 auto;min-width:120px;padding:12px 14px;border-radius:12px;font-size:14px;font-weight:700;
   background:linear-gradient(135deg,#2a77ff,#3aa0ff);color:#fff;box-shadow:0 6px 18px rgba(58,160,255,.35);transition:transform .08s}
 .btn:active{transform:scale(.98)}
 .btn.primary{background:linear-gradient(135deg,#ff4d5e,#ff7a4d);box-shadow:0 6px 18px rgba(255,77,94,.35)}
 .btn.ghost{background:#182338;color:var(--text);box-shadow:none;border:1px solid var(--line)}
+.btn.sm{flex:0 0 auto;min-width:88px;padding:8px 12px;font-size:12px}
 .btn:disabled{opacity:.5;pointer-events:none}
 
 .stat{display:flex;gap:10px;flex-wrap:wrap}
@@ -63,6 +65,14 @@ button{appearance:none;border:none;cursor:pointer;font-family:inherit;touch-acti
 .mrow .nums .b.blue{background:radial-gradient(circle at 35% 30%,#7cc4ff,#3aa0ff 70%)}
 .mrow .det{font-size:11px;color:var(--dim)}
 
+.stgrid{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow:auto}
+.strow{display:flex;align-items:center;gap:8px;padding:7px 9px;background:#0d1830;border-radius:8px}
+.strow .mn{flex:0 0 104px;font-size:13px;font-weight:600}
+.strow .bar{flex:1;height:6px;background:#182338;border-radius:3px;overflow:hidden}
+.strow .bar i{display:block;height:100%;background:linear-gradient(90deg,#3aa0ff,#2dd4a7)}
+.strow .rate{flex:0 0 40px;font-size:12px;color:var(--dim);text-align:right}
+.strow .wt{flex:0 0 44px;font-size:11px;color:var(--dim);text-align:right}
+
 #steps{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6;
   color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
 .empty{color:var(--dim);font-size:13px;text-align:center;padding:18px 0}
@@ -71,6 +81,13 @@ button{appearance:none;border:none;cursor:pointer;font-family:inherit;touch-acti
 @keyframes sp{to{transform:rotate(360deg)}}
 .note{font-size:11px;color:var(--dim);margin-top:10px;line-height:1.5}
 .hidden{display:none}
+.syncbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0}
+.syncbar .lbl{font-size:11px;color:var(--dim)}
+.progress{height:4px;background:#182338;border-radius:2px;overflow:hidden;margin:8px 0}
+.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3aa0ff,#2dd4a7);transition:width .3s}
+#btStatus{font-size:12px;color:var(--dim)}
+.chip{display:inline-block;font-size:11px;padding:3px 8px;background:#0d1830;border:1px solid var(--line);border-radius:6px;color:var(--dim);margin:2px}
+.chip.win{color:var(--green);border-color:var(--green)}
 </style>
 </head>
 <body>
@@ -79,32 +96,51 @@ button{appearance:none;border:none;cursor:pointer;font-family:inherit;touch-acti
     <div class="logo">⚽</div>
     <div>
       <h1>双色球推演器</h1>
-      <div class="sub">16方法加权 · 反拥挤过滤 · 纯前端运行</div>
+      <div class="sub">16方法加权 · 反拥挤过滤 · 回测优化 · 双向同步</div>
     </div>
   </header>
 
   <div class="card">
-    <h2>数据</h2>
+    <h2>数据 &amp; 同步</h2>
     <div class="stat" id="stat">
       <div class="item"><div class="k">总期数</div><div class="v" id="sCount">载入中…</div></div>
       <div class="item"><div class="k">最新期</div><div class="v" id="sLatest">—</div></div>
-      <div class="item"><div class="k">最早期</div><div class="v" id="sOldest">—</div></div>
+      <div class="item"><div class="k">推演记录</div><div class="v" id="sRecords">—</div></div>
     </div>
+    <div class="syncbar">
+      <span class="lbl">云端：</span>
+      <button class="btn sm ghost" id="btnSyncIn">⬇ 从云端下载</button>
+      <button class="btn sm ghost" id="btnSyncOut">⬆ 上传到云端</button>
+    </div>
+    <div class="note" id="syncMsg"></div>
     <div class="note" id="dataNote"></div>
   </div>
 
   <div class="card">
     <h2>一键推演</h2>
-    <button class="btn primary" id="btnPredict" style="width:100%;margin-bottom:14px">🎯 开始推演</button>
-
+    <button class="btn primary" id="btnPredict" style="width:100%;margin-bottom:12px">🎯 开始推演</button>
     <div id="resultBox" class="hidden">
-      <div class="tag">最终推荐</div>
+      <div class="tag">最终推荐（综合推演 + 反拥挤过滤）</div>
       <div class="result" id="finalResult"></div>
       <div class="btnrow" style="margin-top:12px">
         <button class="btn ghost" id="btnSave">💾 存为记录</button>
+        <button class="btn ghost" id="btnCompare">🎪 自动比对最新开奖</button>
       </div>
       <div class="note" id="predictNote"></div>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>方法命中表现 &amp; 权重</h2>
+    <div class="btnrow" style="margin-bottom:10px">
+      <button class="btn sm ghost" id="btnOptWeight">⚙️ 按命中优化权重</button>
+      <button class="btn sm ghost" id="btnRunBacktest">📊 运行滚动回测</button>
+    </div>
+    <div class="progress"><i id="btBar"></i></div>
+    <div id="btStatus"></div>
+    <div style="height:8px"></div>
+    <div class="stgrid" id="statsList"><div class="empty">暂无 · 推演并保存记录后可用</div></div>
+    <div class="note" id="wtMsg"></div>
   </div>
 
   <div class="card">
@@ -114,7 +150,7 @@ button{appearance:none;border:none;cursor:pointer;font-family:inherit;touch-acti
 
   <div class="card">
     <h2>推演过程日志</h2>
-    <div id="steps" class="empty">暂无 · 点击「开始推演」</div>
+    <div id="steps" class="empty">暂无</div>
   </div>
 
   <div class="card">
@@ -123,7 +159,7 @@ button{appearance:none;border:none;cursor:pointer;font-family:inherit;touch-acti
     <div class="btnrow" style="margin-top:12px">
       <button class="btn ghost" id="btnClear">清空记录</button>
     </div>
-    <div class="note">记录存在本机浏览器（localStorage），用于 P4 历史重复检查。</div>
+    <div class="note">记录含比对结果（命中/奖级），用于方法统计与 P4 去重。存云端后 Mac 也能看到。</div>
   </div>
 
   <div class="note" style="padding:0 4px">
@@ -131,119 +167,281 @@ button{appearance:none;border:none;cursor:pointer;font-family:inherit;touch-acti
   </div>
 </div>
 
+<!-- predictor.js 必须先加载（它定义 window.SSQ） -->
 <script src="predictor.js"></script>
 <script>
-let RECORDS = [];   // 新→旧
-let LAST = null;
+// ============ 配置 ============
+const WORKER_URL = "https://ssq-api.ssq-2a9.workers.dev";
+const API_KEY = "c6522f66817652b2dd9b7c1696faf963";
 
-function loadRecords(){ return JSON.parse(localStorage.getItem('ssq_records')||'[]'); }
-function saveRecordsAll(a){ localStorage.setItem('ssq_records', JSON.stringify(a)); }
+// ============ 状态 ============
+let HISTORY = [];
+let RECORDS = [];
+let STATS = {};
+let BACKTEST = [];
+let LAST = null;
+let IS_OFFLINE = false;
+
+const LS = {
+  get(k){ try{ return JSON.parse(localStorage.getItem(k)||'null'); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+
+function weightsFromStats(){
+  const w = {};
+  for (const m of SSQ.METHOD_NAMES) w[m] = (STATS[m] && STATS[m].weight) || 1.0;
+  return w;
+}
+
+// ============ 数据载入（云端优先，本地兜底） ============
+async function loadData(){
+  let snap = null;
+  try {
+    const r = await fetch(WORKER_URL + "/api/snapshot");
+    if (r.ok) snap = await r.json();
+  } catch(e){}
+  if (snap && Array.isArray(snap.history)) {
+    HISTORY = snap.history;
+    RECORDS = snap.records || [];
+    STATS = snap.stats || {};
+    BACKTEST = snap.backtest || [];
+    IS_OFFLINE = false;
+  } else {
+    IS_OFFLINE = true;
+    HISTORY = LS.get("ssq_history") || [];
+    RECORDS = LS.get("ssq_records") || [];
+    STATS = LS.get("ssq_stats") || {};
+    BACKTEST = LS.get("ssq_backtest") || [];
+  }
+  persistLocal();
+  if (HISTORY.length && HISTORY[0].issue < HISTORY[HISTORY.length-1].issue) HISTORY.reverse();
+  renderAll();
+  if (IS_OFFLINE) document.getElementById("syncMsg").textContent = "⚠️ 云端不可达，已用本机缓存。点「从云端下载」重试。";
+}
+
+function persistLocal(){
+  LS.set("ssq_history", HISTORY);
+  LS.set("ssq_records", RECORDS);
+  LS.set("ssq_stats", STATS);
+  LS.set("ssq_backtest", BACKTEST);
+}
+
+// ============ 云端同步 ============
+async function syncFromCloud(){
+  const msg = document.getElementById("syncMsg");
+  msg.innerHTML = '<span class="spin"></span> 正在从云端下载…';
+  try {
+    const r = await fetch(WORKER_URL + "/api/snapshot");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const snap = await r.json();
+    HISTORY = snap.history || HISTORY;
+    RECORDS = snap.records || RECORDS;
+    STATS = snap.stats || STATS;
+    BACKTEST = snap.backtest || BACKTEST;
+    persistLocal();
+    renderAll();
+    IS_OFFLINE = false;
+    msg.textContent = "✅ 云端下载：history " + HISTORY.length + " 期 / 记录 " + RECORDS.length + " 条 / 权重 " + Object.keys(STATS).length + " 个";
+  } catch(e){
+    msg.textContent = "❌ 下载失败：" + e.message;
+  }
+}
+
+async function syncToCloud(){
+  const msg = document.getElementById("syncMsg");
+  msg.innerHTML = '<span class="spin"></span> 正在上传到云端…';
+  try {
+    const r = await fetch(WORKER_URL + "/api/snapshot?key=" + API_KEY, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ history: HISTORY, records: RECORDS, stats: STATS, backtest: BACKTEST })
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const out = await r.json();
+    msg.textContent = "✅ 上传完成：" + JSON.stringify(out.upserted || out);
+  } catch(e){
+    msg.textContent = "❌ 上传失败：" + e.message;
+  }
+}
+
+// ============ 渲染 ============
+function renderAll(){
+  renderStats();
+  renderRecordsList();
+  renderMethodStats();
+}
+
+function renderStats(){
+  document.getElementById("sCount").textContent = HISTORY.length;
+  document.getElementById("sLatest").textContent = HISTORY[0] ? HISTORY[0].issue : "—";
+  document.getElementById("sRecords").textContent = RECORDS.length;
+  if (HISTORY.length) {
+    document.getElementById("dataNote").textContent =
+      "数据范围 " + HISTORY[HISTORY.length-1].date + " ~ " + HISTORY[0].date +
+      (IS_OFFLINE ? "（本机缓存）" : "（云端）");
+  }
+}
+
+function renderRecordsList(){
+  const el = document.getElementById("recordList");
+  if (!RECORDS.length){ el.innerHTML = '<div class="empty">暂无记录</div>'; return; }
+  const sorted = [...RECORDS].sort((a,b)=>(b.id||0)-(a.id||0));
+  el.innerHTML = sorted.map(r=>{
+    const blue = r.predictedBlue;
+    let hit = "";
+    if (r.autoCompared) {
+      const win = r.prize && r.prize !== "未中奖";
+      hit = ` <span class="chip ${win?'win':''}">${r.matchedRed}红+${r.matchedBlue}蓝 ${r.prize||''}</span>`;
+    }
+    let d = "";
+    if (r.recordTime){
+      try{ d = new Date(r.recordTime).toLocaleString("zh-CN",{hour12:false}); }catch(e){ d = r.recordTime; }
+    }
+    return `<div class="mrow"><div class="top">
+      <div class="name">期${r.issue||''}<br><span style="color:var(--blue)">蓝 ${blue}</span></div>
+      <div class="nums">${(r.predictedRed||[]).map(n=>`<div class="b red">${n}</div>`).join('')}<div class="b blue">${blue}</div></div>
+    </div>
+    <div class="det">推 ${(r.predictedRed||[]).join(' ')}  ${hit}  ${d}</div></div>`;
+  }).join("");
+}
+
+function renderMethodStats(){
+  const el = document.getElementById("statsList");
+  const keys = SSQ.METHOD_NAMES;
+  const compared = RECORDS.filter(r=>r.autoCompared).length;
+  if (!compared && !Object.keys(STATS).length){ el.innerHTML = '<div class="empty">暂无 · 推演并保存记录后可用</div>'; return; }
+  const maxRate = Math.max(...keys.map(m=> (STATS[m] ? STATS[m].hitRate : 0)), 0.0001);
+  el.innerHTML = keys.map(m=>{
+    const s = STATS[m] || { hitCount:0, totalCount:0, hitRate:0, weight:1.0 };
+    const ratePct = (s.hitRate*100).toFixed(0);
+    const barW = Math.round((s.hitRate/maxRate)*100);
+    return `<div class="strow">
+      <div class="mn">${m}</div>
+      <div class="bar"><i style="width:${barW}%"></i></div>
+      <div class="rate">${ratePct}%</div>
+      <div class="wt">w=${(s.weight).toFixed(2)}</div>
+    </div>`;
+  }).join("");
+}
+
+// ============ 推演 ============
+async function doPredict(){
+  const btn = document.getElementById("btnPredict");
+  if (HISTORY.length === 0){ alert("没有历史数据，请先「从云端下载」"); return; }
+  btn.disabled = true;
+  document.getElementById("resultBox").classList.add("hidden");
+  const stepsEl = document.getElementById("steps");
+  stepsEl.textContent = ""; stepsEl.classList.remove("empty");
+  document.getElementById("methodList").innerHTML = '<div class="empty"><span class="spin"></span>推演中…</div>';
+  await new Promise(r=>setTimeout(r,30));
+
+  const prev = RECORDS.map(r=>r.predictedRed||[]);
+  const weights = weightsFromStats();
+  const steps = ["📊 双色球推演启动...", `  数据: ${HISTORY.length} 期 (最新 ${HISTORY[0].issue})`,
+                 `  已加载权重 ${Object.keys(STATS).length} 个方法`, ""];
+  const out = SSQ.predictOne(HISTORY, prev, weights, steps);
+  LAST = { red: out.red, blue: out.blue };
+
+  document.getElementById("finalResult").innerHTML = ballsHtml(out.red, out.blue, "");
+  document.getElementById("resultBox").classList.remove("hidden");
+  document.getElementById("predictNote").textContent = "红球: " + out.red.join(" ") + "  蓝球: " + out.blue;
+
+  document.getElementById("methodList").innerHTML = out.methodResults.map(([m,red,blue,d])=>
+    `<div class="mrow"><div class="top"><div class="name">${m}</div>
+      <div class="nums">${red.map(n=>`<div class="b red">${n}</div>`).join('')}<div class="b blue">${blue}</div></div></div>
+      <div class="det">${d}</div></div>`).join("");
+
+  stepsEl.textContent = steps.join("\n");
+  btn.disabled = false;
+}
 
 function ballsHtml(red, blue, size){
-  const cls = size ? 'b ' : '';
-  let h = red.map(n=>`<div class="ball ${cls}red">${n}</div>`).join('');
+  const cls = size ? "b " : "";
+  let h = red.map(n=>`<div class="ball ${cls}red">${n}</div>`).join("");
   h += '<span class="plus">+</span><div class="ball '+cls+'blue">'+blue+'</div>';
   return h;
 }
 
-function renderStats(){
-  if(!RECORDS.length){ 
-    document.getElementById('sCount').textContent='—';
-    document.getElementById('dataNote').textContent='未载入历史数据';
-    return;
-  }
-  document.getElementById('sCount').textContent = RECORDS.length;
-  document.getElementById('sLatest').textContent = RECORDS[0].issue;
-  document.getElementById('sOldest').textContent = RECORDS[RECORDS.length-1].issue;
-  document.getElementById('dataNote').textContent =
-    '数据范围 '+RECORDS[RECORDS.length-1].date+' ~ '+RECORDS[0].date+'（打包进前端，更新需重新部署）';
-}
-
-function renderRecords(){
-  const recs = loadRecords();
-  const el = document.getElementById('recordList');
-  if(!recs.length){ el.innerHTML='<div class="empty">暂无记录</div>'; return; }
-  el.innerHTML = recs.map(r=>{
-    const d = new Date(r.ts).toLocaleString('zh-CN',{hour12:false});
-    return `<div class="mrow">
-      <div class="top"><div class="name">红${r.red.join(' ')}<br><span style="color:var(--blue)">蓝 ${r.blue}</span></div></div>
-      <div class="det">${d}</div></div>`;
-  }).join('');
-}
-
-async function doPredict(){
-  const btn = document.getElementById('btnPredict');
-  btn.disabled = true;
-  document.getElementById('resultBox').classList.add('hidden');
-  const stepsEl = document.getElementById('steps');
-  stepsEl.textContent = ''; stepsEl.classList.remove('empty');
-  document.getElementById('methodList').innerHTML = '<div class="empty"><span class="spin"></span>推演中…</div>';
-
-  // 浏览器没有 setTimeout 阻塞问题，直接跑（数据已打包在内存）
-  await new Promise(r=>setTimeout(r,30)); // 让 UI 先刷新
-
-  const steps = ["📊 双色球推演启动...", `  数据源: 打包载入 history.json`,
-                 `  共 ${RECORDS.length} 期  (最新: ${RECORDS[0].issue} ${RECORDS[0].date})`, ""];
-  const results = SSQ.getMethodPredictions(RECORDS, steps);
-
-  steps.push("");
-  steps.push("🔍 反拥挤过滤 (许愿算法 P1/P2/P4)...");
-  const prev = loadRecords().map(r=>r.red);
-  const voted = SSQ.vote(results, prev, true);
-  steps.push(`  P1 形态 / P2 生日降权 / P4 历史重复 (基于 ${prev.length} 条已存记录)`);
-  steps.push("  最终红球: " + voted.red.map(x=>String(x).padStart(2,'0')).join(" "));
-  steps.push("  最终蓝球: " + String(voted.blue).padStart(2,'0'));
-
-  LAST = {red: voted.red, blue: voted.blue};
-
-  document.getElementById('finalResult').innerHTML = ballsHtml(voted.red, voted.blue);
-  document.getElementById('resultBox').classList.remove('hidden');
-  document.getElementById('predictNote').textContent = '红球: '+voted.red.join(' ')+'  蓝球: '+voted.blue;
-
-  document.getElementById('methodList').innerHTML = results.map(([m,red,blue,d])=>
-    `<div class="mrow"><div class="top"><div class="name">${m}</div>
-      <div class="nums">${red.map(n=>`<div class="b red">${n}</div>`).join('')}<div class="b blue">${blue}</div></div></div>
-      <div class="det">${d}</div></div>`).join('');
-
-  stepsEl.textContent = steps.join('\n');
-  btn.disabled = false;
-  renderRecords();
-}
-
 function savePrediction(){
-  if(!LAST) return;
-  const recs = loadRecords();
-  recs.unshift({red:LAST.red, blue:LAST.blue, ts:Date.now()});
-  if(recs.length>200) recs.length=200;
-  saveRecordsAll(recs);
-  document.getElementById('predictNote').textContent = '已保存 ✅  红:'+LAST.red.join(' ')+'  蓝:'+LAST.blue;
-  renderRecords();
+  if (!LAST) return;
+  const rec = {
+    id: Date.now(),
+    issue: HISTORY[0] ? SSQ.nextIssue(HISTORY[0].issue) : "",
+    method: "综合推演",
+    predictedRed: LAST.red,
+    predictedBlue: LAST.blue,
+    actualRed: null, actualBlue: null,
+    matchedRed: 0, matchedBlue: 0,
+    prize: "待开奖", autoCompared: false,
+    recordTime: new Date().toISOString(),
+    note: "综合推演"
+  };
+  RECORDS.unshift(rec);
+  if (RECORDS.length > 500) RECORDS.length = 500;
+  persistLocal();
+  document.getElementById("predictNote").textContent = "已保存 ✅  红:" + LAST.red.join(" ") + "  蓝:" + LAST.blue;
+  renderRecordsList();
+  document.getElementById("syncMsg").textContent = "💡 记得点「上传到云端」把记录同步到 Mac";
 }
 
-// 载入打包的历史数据
-fetch('history.json')
-  .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-  .then(d=>{
-    RECORDS = d;
-    // 确认是 新→旧 排序；若为 旧→新 则反转
-    if(RECORDS[0].issue < RECORDS[RECORDS.length-1].issue) RECORDS.reverse();
-    renderStats();
-    renderRecords();
-    document.getElementById('btnPredict').disabled = false;
-  })
-  .catch(e=>{
-    document.getElementById('sCount').textContent='载入失败';
-    document.getElementById('dataNote').textContent='history.json 载入失败: '+e.message;
-  });
+function autoCompareAll(){
+  if (!HISTORY.length || !RECORDS.length){ alert("无数据可比对"); return; }
+  const changed = SSQ.autoCompare(HISTORY, RECORDS);
+  persistLocal();
+  renderRecordsList();
+  document.getElementById("predictNote").textContent =
+    changed > 0 ? `已比对 ${changed} 条记录 ✅` : "没有可比对的新记录（或最新期还没开奖）";
+}
 
-document.getElementById('btnPredict').addEventListener('click', doPredict);
-document.getElementById('btnSave').addEventListener('click', savePrediction);
-document.getElementById('btnClear').addEventListener('click', ()=>{
-  if(!confirm('清空全部推演记录？')) return;
-  saveRecordsAll([]);
-  document.getElementById('predictNote').textContent='';
-  renderRecords();
+// ============ 权重优化 ============
+function optimizeWeightsNow(){
+  if (!RECORDS.length){ alert("先推演并保存一些记录"); return; }
+  const compared = RECORDS.filter(r=>r.autoCompared);
+  if (!compared.length){ alert("需要已比对的记录（命中结果）。先点「自动比对」"); return; }
+  const stats = SSQ.calcMethodStats(RECORDS, STATS);
+  STATS = SSQ.optimizeWeights(stats);
+  persistLocal();
+  renderMethodStats();
+  document.getElementById("wtMsg").textContent = "✅ 已按命中优化 " + Object.keys(STATS).length + " 个方法权重，下次推演生效。记得「上传到云端」";
+}
+
+// ============ 回测 ============
+async function runBacktestNow(){
+  const st = document.getElementById("btStatus");
+  const bar = document.getElementById("btBar");
+  if (HISTORY.length < SSQ.MIN_TRAINING + 10){ alert("历史数据不足 40 期"); return; }
+  st.innerHTML = '<span class="spin"></span> 回测中（最多 200 期）…';
+  bar.style.width = "0%";
+  const weights = weightsFromStats();
+  const report = await SSQ.runBacktest(HISTORY, 200, weights, (done, total)=>{
+    bar.style.width = Math.round(done/total*100) + "%";
+    st.textContent = "回测进度 " + done + "/" + total;
+  });
+  BACKTEST = report;
+  STATS = SSQ.applyBacktestWeights(report, STATS);
+  persistLocal();
+  renderMethodStats();
+  st.textContent = "✅ 回测完成：" + report.length + " 个方法 × " + (report[0]?report[0].periods:0) +
+    " 期。得分前3: " + report.slice(0,3).map(r=>r.method+"("+r.score.toFixed(2)+")").join(" ");
+  document.getElementById("wtMsg").textContent = "回测报告已存入，权重已更新。点「上传到云端」同步到 Mac";
+}
+
+// ============ 绑定 ============
+document.getElementById("btnPredict").addEventListener("click", doPredict);
+document.getElementById("btnSave").addEventListener("click", savePrediction);
+document.getElementById("btnCompare").addEventListener("click", autoCompareAll);
+document.getElementById("btnOptWeight").addEventListener("click", optimizeWeightsNow);
+document.getElementById("btnRunBacktest").addEventListener("click", runBacktestNow);
+document.getElementById("btnSyncIn").addEventListener("click", syncFromCloud);
+document.getElementById("btnSyncOut").addEventListener("click", syncToCloud);
+document.getElementById("btnClear").addEventListener("click", ()=>{
+  if (!confirm("清空全部推演记录？")) return;
+  RECORDS = [];
+  persistLocal();
+  renderRecordsList();
 });
+
+loadData();
 </script>
 </body>
 </html>
