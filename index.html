@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1220">
+<title>双色球推演器</title>
+<style>
+:root{
+  --bg:#0b1220; --panel:#111a2e; --panel2:#0e1626; --line:#1f2b45;
+  --text:#e8eefc; --dim:#8b98b8; --red:#ff4d5e; --blue:#3aa0ff;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:radial-gradient(1200px 800px at 50% -10%, #16233f 0%, var(--bg) 60%);
+  color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+  min-height:100vh; padding-bottom:24px;
+}
+.wrap{max-width:720px; margin:0 auto; padding:18px 16px calc(18px + env(safe-area-inset-bottom));}
+header{display:flex; align-items:center; gap:12px; padding:8px 4px 18px;}
+header .logo{width:46px;height:46px;border-radius:12px;flex:0 0 46px;
+  background:linear-gradient(135deg,#ff4d5e,#3aa0ff);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800}
+header h1{font-size:19px;margin:0;letter-spacing:.5px}
+header .sub{font-size:12px;color:var(--dim);margin-top:3px}
+
+.card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+  border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.card h2{font-size:14px;margin:0 0 12px;color:var(--dim);letter-spacing:1px;font-weight:600}
+
+.btnrow{display:flex;gap:10px;flex-wrap:wrap}
+button{appearance:none;border:none;cursor:pointer;font-family:inherit;touch-action:manipulation}
+.btn{flex:1 1 auto;min-width:120px;padding:14px 16px;border-radius:12px;font-size:15px;font-weight:700;
+  background:linear-gradient(135deg,#2a77ff,#3aa0ff);color:#fff;box-shadow:0 6px 18px rgba(58,160,255,.35);transition:transform .08s}
+.btn:active{transform:scale(.98)}
+.btn.primary{background:linear-gradient(135deg,#ff4d5e,#ff7a4d);box-shadow:0 6px 18px rgba(255,77,94,.35)}
+.btn.ghost{background:#182338;color:var(--text);box-shadow:none;border:1px solid var(--line)}
+.btn:disabled{opacity:.5;pointer-events:none}
+
+.stat{display:flex;gap:10px;flex-wrap:wrap}
+.stat .item{flex:1 1 100px;background:#0d1830;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.stat .k{font-size:11px;color:var(--dim)}
+.stat .v{font-size:15px;font-weight:700;margin-top:4px}
+
+.result{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;padding:8px 0}
+.ball{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:16px;color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.ball.red{background:radial-gradient(circle at 35% 30%,#ff8a97,#ff4d5e 70%)}
+.ball.blue{background:radial-gradient(circle at 35% 30%,#7cc4ff,#3aa0ff 70%)}
+.result .plus{color:var(--dim);font-weight:700}
+.tag{font-size:12px;color:var(--dim);background:#0d1830;border:1px solid var(--line);padding:5px 10px;border-radius:8px}
+
+.mlist{display:flex;flex-direction:column;gap:8px}
+.mrow{display:flex;flex-direction:column;gap:4px;background:#0d1830;border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+.mrow .top{display:flex;align-items:center;gap:10px}
+.mrow .name{flex:0 0 92px;font-size:13px;font-weight:600}
+.mrow .nums{display:flex;gap:4px;flex-wrap:wrap}
+.mrow .nums .b{width:26px;height:26px;font-size:12px;display:flex;align-items:center;justify-content:center;
+  border-radius:50%;color:#fff;font-weight:700}
+.mrow .nums .b.red{background:radial-gradient(circle at 35% 30%,#ff8a97,#ff4d5e 70%)}
+.mrow .nums .b.blue{background:radial-gradient(circle at 35% 30%,#7cc4ff,#3aa0ff 70%)}
+.mrow .det{font-size:11px;color:var(--dim)}
+
+#steps{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6;
+  color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
+.empty{color:var(--dim);font-size:13px;text-align:center;padding:18px 0}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #3a486a;border-top-color:#3aa0ff;
+  border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.note{font-size:11px;color:var(--dim);margin-top:10px;line-height:1.5}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">⚽</div>
+    <div>
+      <h1>双色球推演器</h1>
+      <div class="sub">16方法加权 · 反拥挤过滤 · 纯前端运行</div>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>数据</h2>
+    <div class="stat" id="stat">
+      <div class="item"><div class="k">总期数</div><div class="v" id="sCount">载入中…</div></div>
+      <div class="item"><div class="k">最新期</div><div class="v" id="sLatest">—</div></div>
+      <div class="item"><div class="k">最早期</div><div class="v" id="sOldest">—</div></div>
+    </div>
+    <div class="note" id="dataNote"></div>
+  </div>
+
+  <div class="card">
+    <h2>一键推演</h2>
+    <button class="btn primary" id="btnPredict" style="width:100%;margin-bottom:14px">🎯 开始推演</button>
+
+    <div id="resultBox" class="hidden">
+      <div class="tag">最终推荐</div>
+      <div class="result" id="finalResult"></div>
+      <div class="btnrow" style="margin-top:12px">
+        <button class="btn ghost" id="btnSave">💾 存为记录</button>
+      </div>
+      <div class="note" id="predictNote"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>各方法推荐</h2>
+    <div class="mlist" id="methodList"><div class="empty">暂无 · 点击「开始推演」</div></div>
+  </div>
+
+  <div class="card">
+    <h2>推演过程日志</h2>
+    <div id="steps" class="empty">暂无 · 点击「开始推演」</div>
+  </div>
+
+  <div class="card">
+    <h2>推演记录</h2>
+    <div class="mlist" id="recordList"><div class="empty">暂无记录</div></div>
+    <div class="btnrow" style="margin-top:12px">
+      <button class="btn ghost" id="btnClear">清空记录</button>
+    </div>
+    <div class="note">记录存在本机浏览器（localStorage），用于 P4 历史重复检查。</div>
+  </div>
+
+  <div class="note" style="padding:0 4px">
+    ⚠️ 本工具基于历史统计规律生成候选号码，仅作个人娱乐参考，无法预测随机开奖结果。请理性购彩。
+  </div>
+</div>
+
+<script src="predictor.js"></script>
+<script>
+let RECORDS = [];   // 新→旧
+let LAST = null;
+
+function loadRecords(){ return JSON.parse(localStorage.getItem('ssq_records')||'[]'); }
+function saveRecordsAll(a){ localStorage.setItem('ssq_records', JSON.stringify(a)); }
+
+function ballsHtml(red, blue, size){
+  const cls = size ? 'b ' : '';
+  let h = red.map(n=>`<div class="ball ${cls}red">${n}</div>`).join('');
+  h += '<span class="plus">+</span><div class="ball '+cls+'blue">'+blue+'</div>';
+  return h;
+}
+
+function renderStats(){
+  if(!RECORDS.length){ 
+    document.getElementById('sCount').textContent='—';
+    document.getElementById('dataNote').textContent='未载入历史数据';
+    return;
+  }
+  document.getElementById('sCount').textContent = RECORDS.length;
+  document.getElementById('sLatest').textContent = RECORDS[0].issue;
+  document.getElementById('sOldest').textContent = RECORDS[RECORDS.length-1].issue;
+  document.getElementById('dataNote').textContent =
+    '数据范围 '+RECORDS[RECORDS.length-1].date+' ~ '+RECORDS[0].date+'（打包进前端，更新需重新部署）';
+}
+
+function renderRecords(){
+  const recs = loadRecords();
+  const el = document.getElementById('recordList');
+  if(!recs.length){ el.innerHTML='<div class="empty">暂无记录</div>'; return; }
+  el.innerHTML = recs.map(r=>{
+    const d = new Date(r.ts).toLocaleString('zh-CN',{hour12:false});
+    return `<div class="mrow">
+      <div class="top"><div class="name">红${r.red.join(' ')}<br><span style="color:var(--blue)">蓝 ${r.blue}</span></div></div>
+      <div class="det">${d}</div></div>`;
+  }).join('');
+}
+
+async function doPredict(){
+  const btn = document.getElementById('btnPredict');
+  btn.disabled = true;
+  document.getElementById('resultBox').classList.add('hidden');
+  const stepsEl = document.getElementById('steps');
+  stepsEl.textContent = ''; stepsEl.classList.remove('empty');
+  document.getElementById('methodList').innerHTML = '<div class="empty"><span class="spin"></span>推演中…</div>';
+
+  // 浏览器没有 setTimeout 阻塞问题，直接跑（数据已打包在内存）
+  await new Promise(r=>setTimeout(r,30)); // 让 UI 先刷新
+
+  const steps = ["📊 双色球推演启动...", `  数据源: 打包载入 history.json`,
+                 `  共 ${RECORDS.length} 期  (最新: ${RECORDS[0].issue} ${RECORDS[0].date})`, ""];
+  const results = SSQ.getMethodPredictions(RECORDS, steps);
+
+  steps.push("");
+  steps.push("🔍 反拥挤过滤 (许愿算法 P1/P2/P4)...");
+  const prev = loadRecords().map(r=>r.red);
+  const voted = SSQ.vote(results, prev, true);
+  steps.push(`  P1 形态 / P2 生日降权 / P4 历史重复 (基于 ${prev.length} 条已存记录)`);
+  steps.push("  最终红球: " + voted.red.map(x=>String(x).padStart(2,'0')).join(" "));
+  steps.push("  最终蓝球: " + String(voted.blue).padStart(2,'0'));
+
+  LAST = {red: voted.red, blue: voted.blue};
+
+  document.getElementById('finalResult').innerHTML = ballsHtml(voted.red, voted.blue);
+  document.getElementById('resultBox').classList.remove('hidden');
+  document.getElementById('predictNote').textContent = '红球: '+voted.red.join(' ')+'  蓝球: '+voted.blue;
+
+  document.getElementById('methodList').innerHTML = results.map(([m,red,blue,d])=>
+    `<div class="mrow"><div class="top"><div class="name">${m}</div>
+      <div class="nums">${red.map(n=>`<div class="b red">${n}</div>`).join('')}<div class="b blue">${blue}</div></div></div>
+      <div class="det">${d}</div></div>`).join('');
+
+  stepsEl.textContent = steps.join('\n');
+  btn.disabled = false;
+  renderRecords();
+}
+
+function savePrediction(){
+  if(!LAST) return;
+  const recs = loadRecords();
+  recs.unshift({red:LAST.red, blue:LAST.blue, ts:Date.now()});
+  if(recs.length>200) recs.length=200;
+  saveRecordsAll(recs);
+  document.getElementById('predictNote').textContent = '已保存 ✅  红:'+LAST.red.join(' ')+'  蓝:'+LAST.blue;
+  renderRecords();
+}
+
+// 载入打包的历史数据
+fetch('history.json')
+  .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+  .then(d=>{
+    RECORDS = d;
+    // 确认是 新→旧 排序；若为 旧→新 则反转
+    if(RECORDS[0].issue < RECORDS[RECORDS.length-1].issue) RECORDS.reverse();
+    renderStats();
+    renderRecords();
+    document.getElementById('btnPredict').disabled = false;
+  })
+  .catch(e=>{
+    document.getElementById('sCount').textContent='载入失败';
+    document.getElementById('dataNote').textContent='history.json 载入失败: '+e.message;
+  });
+
+document.getElementById('btnPredict').addEventListener('click', doPredict);
+document.getElementById('btnSave').addEventListener('click', savePrediction);
+document.getElementById('btnClear').addEventListener('click', ()=>{
+  if(!confirm('清空全部推演记录？')) return;
+  saveRecordsAll([]);
+  document.getElementById('predictNote').textContent='';
+  renderRecords();
+});
+</script>
+</body>
+</html>
