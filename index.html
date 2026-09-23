@@ -286,22 +286,28 @@ function renderRecordsList(){
   const el = document.getElementById("recordList");
   if (!RECORDS.length){ el.innerHTML = '<div class="empty">暂无记录</div>'; return; }
   const sorted = [...RECORDS].sort((a,b)=>(b.id||0)-(a.id||0));
+  const ballRow = (label, red, blue) =>
+    `<div class="top"><div class="name" style="color:var(--dim)">${label}</div>
+      <div class="nums">${(red||[]).map(n=>`<div class="b red">${n}</div>`).join('')}<div class="b blue">${blue}</div></div></div>`;
   el.innerHTML = sorted.map(r=>{
-    const blue = r.predictedBlue;
     let hit = "";
     if (r.autoCompared) {
       const win = r.prize && r.prize !== "未中奖";
-      hit = ` <span class="chip ${win?'win':''}">${r.matchedRed}红+${r.matchedBlue}蓝 ${r.prize||''}</span>`;
+      hit = ` <span class="chip ${win?'win':''}">命中 ${r.matchedRed}红+${r.matchedBlue}蓝 ${r.prize||''}</span>`;
     }
     let d = "";
     if (r.recordTime){
       try{ d = new Date(r.recordTime).toLocaleString("zh-CN",{hour12:false}); }catch(e){ d = r.recordTime; }
     }
-    return `<div class="mrow"><div class="top">
-      <div class="name">期${r.issue||''}<br><span style="color:var(--blue)">蓝 ${blue}</span></div>
-      <div class="nums">${(r.predictedRed||[]).map(n=>`<div class="b red">${n}</div>`).join('')}<div class="b blue">${blue}</div></div>
-    </div>
-    <div class="det">推 ${(r.predictedRed||[]).join(' ')}  ${hit}  ${d}</div></div>`;
+    // 第一行：推演号码；已比对时第二行：开奖号码（与 Mac 版一致）
+    let html = `<div class="mrow">
+      <div class="det" style="font-weight:600">期 ${r.issue||''}</div>
+      ${ballRow("推演", r.predictedRed, r.predictedBlue)}`;
+    if (r.autoCompared && r.actualRed && r.actualRed.length) {
+      html += ballRow("开奖", r.actualRed, r.actualBlue);
+    }
+    html += `<div class="det">${hit}  ${d}</div></div>`;
+    return html;
   }).join("");
 }
 
