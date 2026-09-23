@@ -678,6 +678,122 @@ class DataStore: ObservableObject {
             debugLog("[SSQ] Error loading backtest report: \(error)")
         }
     }
+
+    // MARK: - 云端双向同步（Cloudflare Worker + D1）
+
+    static let workerURL = "https://api.b1y.ren"
+    static let apiKey = "c6522f66817652b2dd9b7c1696faf963"
+
+    /// 从云端下载 4 类数据（history/records/stats/backtest），合并到本地。
+    /// 时间戳合并：云端 updated_at 更新的覆盖本地。
+    func syncFromCloud() {
+        fetchStatus = "⬇️ 正在从云端下载…"
+        let snapshotURL = URL(string: Self.workerURL + "/api/snapshot")!
+        URLSession.shared.dataTask(with: snapshotURL) { [weak self] data, resp, err in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let err = err {
+                    self.fetchStatus = "❌ 下载失败：\(err.localizedDescription)"
+                    self.scheduleClearStatus()
+                    return
+                }
+                guard let data = data else { self.fetchStatus = "❌ 下载失败：无响应"; return }
+                struct Snap: Decodable {
+                    let history: [Record]
+                    let records: [Prediction]
+                    let stats: [String: MethodStat]
+                    let backtest: [MethodBacktestResult]
+                }
+                do {
+                    let snap = try JSONDecoder().decode(Snap.self, from: data)
+                    // history：按期号合并，新→旧
+                    let known = Set(self.records.map { $0.issue })
+                    var merged = self.records
+                    var added = 0
+                    for r in snap.history where !known.contains(r.issue) {
+                        merged.append(r); added += 1
+                    }
+                    self.records = merged.sorted { $0.issue > $1.issue }
+                    // records：按 id 合并，取 recordTime 较新者（字符串按字典序，足够区分先后）
+                    let localRecs = Dictionary(uniqueKeysWithValues: self.predictions.map { ($0.id, $0) })
+                    let cloudRecs = Dictionary(uniqueKeysWithValues: snap.records.map { ($0.id, $0) })
+                    let allIds = Set(localRecs.keys).union(cloudRecs.keys)
+                    self.predictions = allIds.compactMap { id in
+                        let l = localRecs[id], c = cloudRecs[id]
+                        if let l = l, let c = c {
+                            return l.recordTime >= c.recordTime ? l : c
+                        }
+                        return c ?? l
+                    }.sorted { $0.id < $1.id }
+                    // stats：云端覆盖（权重是回测结果，云端通常更新）
+                    if !snap.stats.isEmpty {
+                        self.methodStats = snap.stats
+                    }
+                    // backtest：云端覆盖
+                    if !snap.backtest.isEmpty {
+                        self.backtestResults = snap.backtest
+                        if let first = self.backtestResults.first {
+                            self.backtestStatus = "云端回测：\(self.backtestResults.count) 个方法 × \(first.periods) 期"
+                        }
+                    }
+                    self.saveHistory()
+                    self.savePredictions()
+                    self.saveMethodStats()
+                    self.saveBacktestReport()
+                    self.fetchStatus = "✅ 云端下载：+\(added)期 / \(self.predictions.count)记录 / \(self.methodStats.count)权重"
+                    self.scheduleClearStatus()
+                } catch {
+                    self.fetchStatus = "❌ 解析云端数据失败：\(error)"
+                    self.scheduleClearStatus()
+                }
+            }
+        }.resume()
+    }
+
+    /// 上传本地 4 类数据到云端（带密钥鉴权）。
+    func syncToCloud() {
+        fetchStatus = "⬆️ 正在上传到云端…"
+        struct Snap: Encodable {
+            let history: [Record]
+            let records: [Prediction]
+            let stats: [String: MethodStat]
+            let backtest: [MethodBacktestResult]
+        }
+        let snap = Snap(history: records, records: predictions, stats: methodStats, backtest: backtestResults)
+        let url = URL(string: Self.workerURL + "/api/snapshot?key=\(Self.apiKey)")!
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            req.httpBody = try JSONEncoder().encode(snap)
+        } catch {
+            fetchStatus = "❌ 序列化失败：\(error)"
+            scheduleClearStatus()
+            return
+        }
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, err in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let err = err {
+                    self.fetchStatus = "❌ 上传失败：\(err.localizedDescription)"
+                } else if let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200 {
+                    self.fetchStatus = "✅ 已上传：\(self.records.count)期 / \(self.predictions.count)记录 / \(self.methodStats.count)权重"
+                } else {
+                    let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                    self.fetchStatus = "❌ 上传失败：HTTP \(code)"
+                }
+                self.scheduleClearStatus()
+            }
+        }.resume()
+    }
+
+    private func scheduleClearStatus() {
+        let msg = fetchStatus
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self = self else { return }
+            if self.fetchStatus == msg { self.fetchStatus = "" }
+        }
+    }
 }
 
 // MARK: - Predictor
@@ -1589,6 +1705,16 @@ struct ContentView: View {
                 Spacer()
                 Button(action: { dataStore.fetchLatestDraws() }) {
                     Label("更新数据", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: { dataStore.syncFromCloud() }) {
+                    Label("⬇ 云端下载", systemImage: "icloud.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
+
+                Button(action: { dataStore.syncToCloud() }) {
+                    Label("⬆ 上传云端", systemImage: "icloud.and.arrow.up")
                 }
                 .buttonStyle(.bordered)
 
