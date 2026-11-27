@@ -5,20 +5,24 @@ macOS 原生 SwiftUI 单文件应用：基于 16 种统计分析方法 + 加权�
 ## 功能
 
 - **一键推演**：16 种方法（热号追踪、冷号回补、区间分布、奇偶平衡、和值/跨度/AC值分析、连号/重号/尾数/遗漏分析、号码关联、蓝球热号/冷号/奇偶）各自推算号码，加权投票汇总出综合推演结果
+- **号码自选**：33 红球 + 16 蓝球网格，每格实时标注遗漏期数（当期开出=0，上期开出=1，以此类推；冷号高亮），点选后存为推演记录并自动比对
 - **滚动回测引擎**：对最近 N 期（50/100/200/500/全部，约 3400+ 期）逐期复盘——每期仅用该期之前的历史数据推演再与实际开奖比对，严格无未来数据泄漏；全量回测约 1 秒
 - **方法命中率统计**：均红命中、蓝球命中率、中奖等级分布、综合得分，得分可一键写入方法权重
 - **数据自动更新**：从 e.17500.cn 拉取最新开奖，新数据到达后自动比对历史预测
 - **数据持久化**：history / predictions / method_stats / backtest_report 存放于 `~/Library/Application Support/双色球推演器/`，首次启动自动从 bundle 与旧目录迁移
+- **云端双向同步**：与 Cloudflare Worker + D1 双向同步（网页端 ssq-predictor.pages.dev 数据互通）
 
 ## 构建与运行
 
-依赖：macOS 12+，Xcode Command Line Tools
+依赖：macOS 12+，Xcode（完整版，SwiftUI 编译需要其宏插件；裸 Command Line Tools 无法编译）
 
 ```bash
 # 源文件名为 main.swift，与 @main 属性冲突，需换名或加 -parse-as-library
 swiftc -O -parse-as-library main.swift -o 双色球推演器
 ./双色球推演器
 ```
+
+**无本地 Xcode 时**：仓库 `swift-desktop` 分支带 GitHub Actions workflow（macos-15 runner），push 后自动编译并上传 `ssq-binary` artifact，下载后放入 `.app/Contents/MacOS/` 重签即可。
 
 打包为 .app：将二进制放入 `双色球推演器.app/Contents/MacOS/`，`history.json` 放入 `Contents/Resources/`，然后重签名：
 
