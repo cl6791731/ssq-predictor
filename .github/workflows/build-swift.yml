@@ -1,0 +1,33 @@
+name: build-swift-app
+
+on:
+  push:
+    branches: [swift-desktop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 环境信息
+        run: |
+          uname -m
+          swiftc --version
+          xcode-select -p
+
+      - name: 编译（runner 自带完整 Xcode，支持 SwiftUI 宏）
+        run: swiftc -O -parse-as-library main.swift -o ssq-binary
+
+      - name: 验证产物
+        run: file ssq-binary
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ssq-binary
+          path: ssq-binary
+          retention-days: 7
