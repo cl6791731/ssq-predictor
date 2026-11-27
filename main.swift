@@ -1244,6 +1244,21 @@ class Predictor {
     }
 }
 
+// MARK: - 号码遗漏计算（自选界面用）
+/// 从最新一期往回数，号码首次出现的位置即遗漏期数（当期开出=0，上期开出=1，以此类推）
+func missCounts(records: [Record]) -> (red: [Int: Int], blue: [Int: Int]) {
+    var redMiss = [Int: Int](), blueMiss = [Int: Int]()
+    for i in 1...33 { redMiss[i] = records.count }
+    for i in 1...16 { blueMiss[i] = records.count }
+    var found = 0
+    for (idx, r) in records.enumerated() {
+        if found >= 49 { break }
+        for n in r.red where redMiss[n] == records.count { redMiss[n] = idx; found += 1 }
+        if blueMiss[r.blue] == records.count { blueMiss[r.blue] = idx; found += 1 }
+    }
+    return (redMiss, blueMiss)
+}
+
 // MARK: - SwiftUI Views
 
 struct BallView: View {
@@ -1688,11 +1703,35 @@ struct ContentView: View {
     @StateObject private var dataStore = DataStore()
     @State private var showBacktest = false
     @State private var showSteps = false
+    @State private var pickedRed = Set<Int>()
+    @State private var pickedBlue: Int? = nil
+    @State private var pickNote = ""
 
     var comprehensivePredictions: [Prediction] {
         dataStore.predictions
-            .filter { $0.method == DataStore.comprehensiveMethod }
+            .filter { $0.method == DataStore.comprehensiveMethod || $0.method == "自选" }
             .sorted(by: { $0.id > $1.id })
+    }
+
+    /// 自选号码存为推演记录（与机器推演同流程：入列表 + 自动比对）
+    private func savePicked() {
+        guard pickedRed.count == 6, let blue = pickedBlue else { return }
+        let nextIssue = dataStore.calculateNextIssue(from: dataStore.records.first?.issue ?? "2026001")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        let rec = Prediction(
+            id: Int(Date().timeIntervalSince1970 * 1000) + 7,
+            issue: nextIssue,
+            method: "自选",
+            predictedRed: pickedRed.sorted(),
+            predictedBlue: blue,
+            recordTime: formatter.string(from: Date()),
+            note: "号码自选"
+        )
+        dataStore.predictions.append(rec)
+        dataStore.savePredictions()
+        dataStore.autoCompareWithLatestDraws()
+        pickNote = "已保存 ✅ 红: \(pickedRed.sorted().map { String(format: "%02d", $0) }.joined(separator: " ")) 蓝: \(String(format: "%02d", blue))"
     }
 
     var body: some View {
@@ -1816,6 +1855,15 @@ struct ContentView: View {
                         }
                     }
 
+                    // 号码自选（含遗漏期数）
+                    NumberPickerSection(
+                        records: dataStore.records,
+                        pickedRed: $pickedRed,
+                        pickedBlue: $pickedBlue,
+                        note: $pickNote,
+                        onSave: savePicked
+                    )
+
                     // Prediction records（只展示综合推演，方法明细见「回测分析」）
                     if !comprehensivePredictions.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1847,6 +1895,101 @@ struct ContentView: View {
         if text.hasPrefix("✅") { return .green }
         if text.hasPrefix("❌") { return .red }
         return .orange
+    }
+}
+
+// MARK: - 号码自选 Section
+struct NumberPickerSection: View {
+    let records: [Record]
+    @Binding var pickedRed: Set<Int>
+    @Binding var pickedBlue: Int?
+    @Binding var note: String
+    var onSave: () -> Void
+
+    private var miss: (red: [Int: Int], blue: [Int: Int]) { missCounts(records: records) }
+    private var redAvg: Double { records.isEmpty ? 1 : Double(records.count) / 33.0 }
+    private var blueAvg: Double { records.isEmpty ? 1 : Double(records.count) / 16.0 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("号码自选").font(.headline)
+                Spacer()
+                if let latest = records.first {
+                    Text("共 \(records.count) 期 · 基于第 \(latest.issue) 期")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+            Text("点击号码选择 · 格下数字为遗漏期数（越大越冷）· 红球选 6 个 + 蓝球选 1 个")
+                .font(.caption2).foregroundColor(.secondary)
+
+            Text("红球  已选 \(pickedRed.count)/6").font(.caption)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 11), spacing: 6) {
+                ForEach(1...33, id: \.self) { n in
+                    pickCell(number: n, missVal: miss.red[n] ?? 0, isBlue: false)
+                }
+            }
+
+            Text("蓝球  已选 \(pickedBlue != nil ? 1 : 0)/1").font(.caption)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
+                ForEach(1...16, id: \.self) { n in
+                    pickCell(number: n, missVal: miss.blue[n] ?? 0, isBlue: true)
+                }
+            }
+
+            HStack(spacing: 12) {
+                Button("💾 存为推演记录") { onSave() }
+                    .disabled(pickedRed.count != 6 || pickedBlue == nil)
+                    .buttonStyle(.bordered)
+                Button("清空选择") {
+                    pickedRed.removeAll(); pickedBlue = nil; note = ""
+                }
+                .buttonStyle(.bordered)
+                if !note.isEmpty {
+                    Text(note).font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+        }
+        .padding()
+        .background(Color(.windowBackgroundColor).opacity(0.3))
+        .cornerRadius(12)
+    }
+
+    private func missColor(_ m: Int, avg: Double) -> Color {
+        if m <= 1 { return .green }
+        if Double(m) >= avg * 2.5 { return .orange }
+        return .secondary
+    }
+
+    private func pickCell(number: Int, missVal: Int, isBlue: Bool) -> some View {
+        let selected = isBlue ? (pickedBlue == number) : pickedRed.contains(number)
+        return Button(action: {
+            if isBlue {
+                pickedBlue = (pickedBlue == number) ? nil : number
+                note = ""
+            } else if pickedRed.contains(number) {
+                pickedRed.remove(number); note = ""
+            } else if pickedRed.count < 6 {
+                pickedRed.insert(number); note = ""
+            } else {
+                note = "红球最多选 6 个"
+            }
+        }) {
+            VStack(spacing: 2) {
+                Text(String(format: "%02d", number))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(isBlue ? Color.blue : Color.red))
+                    .overlay(Circle().stroke(selected ? Color.white : Color.clear, lineWidth: 2.5))
+                    .shadow(color: selected ? (isBlue ? Color.blue : Color.red) : Color.clear, radius: 3)
+                Text("遗漏 \(missVal)")
+                    .font(.system(size: 9))
+                    .foregroundColor(missColor(missVal, avg: isBlue ? blueAvg : redAvg))
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 
